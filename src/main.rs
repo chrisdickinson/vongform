@@ -5,8 +5,12 @@ use std::path::PathBuf;
 use thiserror::Error;
 use surf;
 use std::str::FromStr;
+use std::fs::DirBuilder;
 use serde_derive::{ Deserialize, Serialize };
 use serde_yaml;
+use std::collections::{ HashSet, HashMap };
+use async_std::fs as afs;
+use chrono::prelude::*;
 
 #[derive(StructOpt)]
 struct Options {
@@ -57,6 +61,11 @@ pub enum ServiceSettingParseError {
     ExpectedServiceName(String),
 }
 
+#[derive(Serialize, Deserialize)]
+struct RequirementsYAML {
+    dependencies: Vec<Requirement>
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct Requirement {
     name: String,
@@ -77,7 +86,6 @@ struct ConsulValue {
 
 #[async_std::main]
 async fn main() -> anyhow::Result<()> {
-    println!("Hello, world!");
     let mut opts = Options::from_args();
     if opts.output.is_none() {
         let default = std::env::var("VONGFORM_OUTPUT_DIR").ok().unwrap_or_else(|| "chart".to_string());
@@ -121,7 +129,8 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let raw_yaml = base64::decode(&body[0].Value).context("Attempting to decode Consul value from Base64")?;
-    let mut results: Vec<Requirement> = serde_yaml::from_slice(&raw_yaml[..]).context("Attempting to parse YAML from Consul")?;
+    let requirements: RequirementsYAML = serde_yaml::from_slice(&raw_yaml[..]).context("Attempting to parse YAML from Consul")?;
+    let mut results = requirements.dependencies;
 
     for setting in settings {
         let maybe_found = results.iter().enumerate().find(|(_idx, xs)| xs.name == setting.name);
@@ -147,19 +156,99 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // TODO:
-    // - add values overrides
     // - materialize the umbrella chart to disk
 
-    #[derive(Serialize)]
-    struct RequirementsYAML {
-        dependencies: Vec<Requirement>
-    }
+    let mut service_names = results.iter().map(|xs| &xs.name[..]).collect::<HashSet<&str>>();
+    service_names.insert("global");
+
+    let overrides = get_overrides(service_names, &consul_url).await?;
+    let now: DateTime<Utc> = Utc::now();
     let compiled = RequirementsYAML { dependencies: results };
+    let requirements_yaml = serde_yaml::to_string(&compiled)?;
+
+    let mut pb = PathBuf::from(opts.output.unwrap());
+    DirBuilder::new().recursive(true).create(&pb)?;
+
+    pb.push("Chart.yaml");
+    afs::write(&pb, format!(r#"apiVersion: 'v1',
+description: 'Umbrella chart, generated on {}',
+appVersion: '1.0',
+name: chart,
+version: '1.0.0-{}'"#, now.to_rfc2822(), now.timestamp())).await?;
+    pb.pop();
+
+    pb.push("values.yaml");
+    afs::write(&pb, serde_yaml::to_string(&overrides)?).await?;
+    pb.pop();
+
+    pb.push("requirements.yaml");
+    afs::write(&pb, &requirements_yaml[..]).await?;
+    pb.pop();
+
     let mut _response = surf2anyhow(surf::put(
         format!("{}/v1/kv/umbrella?cas={}", &consul_url, body[0].ModifyIndex)
-    ).body_string(serde_yaml::to_string(&compiled)?).await)?;
+    ).body_string(requirements_yaml).await)?;
 
     Ok(())
+}
+
+#[derive(Serialize, Debug)]
+#[serde(untagged)]
+enum Tree {
+    Leaf(String),
+    Node(HashMap<String, Tree>)
+}
+
+async fn get_overrides<'a>(service_names: HashSet<&'a str>, consul_url: &'a str) -> anyhow::Result<Tree> {
+    let mut overrides = HashMap::new();
+
+    for service_name in service_names {
+        let mut response = surf2anyhow(surf::get(format!("{}/v1/kv/{}?recurse=true", &consul_url, service_name)).await)?;
+        if response.status().as_u16() != 200 {
+            continue;
+        }
+
+        let body: Vec<ConsulValue> = response.body_json().await?;
+
+        for consul_value in body {
+            let mut segments: Vec<_> = consul_value.Key.split('/').map(str::to_string).collect();
+            let bytes = match base64::decode(&consul_value.Value) {
+                Err(_) => continue,
+                Ok(b) => b,
+            };
+
+            let decoded = match std::str::from_utf8(&bytes) {
+
+                Err(_) => continue,
+                Ok(b) => b.to_string(),
+            };
+
+            segments.reverse();
+
+            let mut current = &mut overrides;
+
+            while segments.len() > 1 {
+                let level = segments.pop().unwrap();
+                let tmp = current.entry(level).and_modify(|e| {
+                    if let Tree::Leaf(_) = *e {
+                        *e = Tree::Node(HashMap::new())
+                    }
+                }).or_insert(Tree::Node(HashMap::new()));
+
+                current = match tmp {
+                    Tree::Leaf(_) => {
+                        unreachable!("You can't get here from there.")
+                    },
+                    Tree::Node(x) => x
+                };
+            }
+            current.entry(segments.pop().unwrap())
+                .and_modify(|e| *e = Tree::Leaf(String::from(&decoded[..])))
+                .or_insert_with(|| Tree::Leaf(String::from(&decoded[..])));
+        }
+    }
+
+    Ok(Tree::Node(overrides))
 }
 
 fn surf2anyhow<T>(input: Result<T, surf::Exception>) -> anyhow::Result<T> {

@@ -21,8 +21,7 @@ struct Options {
 
 struct ServiceSetting {
     name: String,
-    version: Option<String>,
-    repository: Option<String>
+    version: Option<String>
 }
 
 impl FromStr for ServiceSetting {
@@ -45,8 +44,7 @@ impl FromStr for ServiceSetting {
                 Some(bits[1].to_string())
             } else {
                 None
-            },
-            repository: None
+            }
         })
     }
 }
@@ -126,10 +124,10 @@ async fn main() -> anyhow::Result<()> {
     let mut results: Vec<Requirement> = serde_yaml::from_slice(&raw_yaml[..]).context("Attempting to parse YAML from Consul")?;
 
     for setting in settings {
-        let maybe_found = results.iter().enumerate().find(|(idx, xs)| xs.name == setting.name);
+        let maybe_found = results.iter().enumerate().find(|(_idx, xs)| xs.name == setting.name);
         match setting.version {
             Some(version) => {
-                if let Some((idx, requirement)) = maybe_found {
+                if let Some((idx, _requirement)) = maybe_found {
                     results[idx].version = version;
                     results[idx].repository = opts.repository.clone().or_else(|| results[idx].repository.clone());
                 } else {
@@ -141,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             },
             None => {
-                if let Some((idx, requirement)) = maybe_found {
+                if let Some((idx, _requirement)) = maybe_found {
                     results.remove(idx);
                 }
             }
@@ -157,7 +155,7 @@ async fn main() -> anyhow::Result<()> {
         dependencies: Vec<Requirement>
     }
     let compiled = RequirementsYAML { dependencies: results };
-    let mut response = surf2anyhow(surf::put(
+    let mut _response = surf2anyhow(surf::put(
         format!("{}/v1/kv/umbrella?cas={}", &consul_url, body[0].ModifyIndex)
     ).body_string(serde_yaml::to_string(&compiled)?).await)?;
 

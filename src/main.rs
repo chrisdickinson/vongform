@@ -28,22 +28,22 @@ impl FromStr for ServiceSetting {
     type Err = ServiceSettingParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let bits: Vec<_> = s.split("=").collect();
+        let bits: Vec<_> = s.split('=').collect();
         if bits.len() < 2 {
             return Err(ServiceSettingParseError::ExpectedEquals(s.to_string()))
         }
 
-        if bits[0].len() < 1 {
+        if bits[0].is_empty() {
             return Err(ServiceSettingParseError::ExpectedServiceName(s.to_string()))
 
         }
 
         Ok(ServiceSetting {
             name: bits[0].to_string(),
-            version: if bits[1].len() > 0 {
-                Some(bits[1].to_string())
-            } else {
+            version: if bits[1].is_empty() {
                 None
+            } else {
+                Some(bits[1].to_string())
             }
         })
     }
@@ -116,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
         }]
     };
 
-    if body.len() < 1 {
+    if body.is_empty() {
         bail!("Expected at least one item (or default), got {:?} instead", body);
     }
 
@@ -133,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
                 } else {
                     results.push(Requirement {
                         name: setting.name,
-                        version: version,
+                        version,
                         repository: opts.repository.clone()
                     })
                 }

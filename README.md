@@ -30,7 +30,3 @@ OPTIONS:
         --set <set>...               set a service to a version; can be repeated:
                                      vong --set sessions-2020=1.0.0 --set auth-2020=1.2.3
 ```
-
-## TODO
-
-`rm` is not yet implemented.

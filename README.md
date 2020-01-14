@@ -4,7 +4,7 @@ Generate umbrella chart `requirements.yaml` and `values.yaml` files for helm
 using consul kv. Wow, that's not niche at all!
 
 ```
-$ vong --set <service>=<version> --rm <service> --output <dir>
+$ vong --set <service>=<version> --output <dir>
 ```
 
 Considers the environment variables `VONGFORM_OUTPUT_DIR` and `VONGFORM_DEFAULT_REPOSITORY`.

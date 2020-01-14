@@ -1,25 +1,35 @@
 #![feature(async_closure)]
 use anyhow::{self, bail, Context};
-use structopt::StructOpt;
-use std::path::PathBuf;
-use thiserror::Error;
-use surf;
-use std::str::FromStr;
-use std::fs::DirBuilder;
+use async_std::fs as afs;
+use chrono::prelude::*;
 use serde_derive::{ Deserialize, Serialize };
 use serde_yaml;
 use std::collections::{ HashSet, HashMap };
-use async_std::fs as afs;
-use chrono::prelude::*;
+use std::fs::DirBuilder;
+use std::path::PathBuf;
+use std::str::FromStr;
+use structopt::clap::AppSettings::*;
+use structopt::StructOpt;
+use surf;
+use thiserror::Error;
 
 #[derive(StructOpt)]
+#[structopt(name = "vongform", about = "Manage data for a helm umbrella chart stored in consul. Update service versions and emit the chart.")]
+#[structopt(global_setting(ColoredHelp))]
 struct Options {
-    #[structopt(long, help = "Set a service to a version (e.g., --set foo=1.0.0)")]
+    #[structopt(long,
+        help = "set a service to a version; can be repeated:\nvong --set sessions-2020=1.0.0 --set auth-2020=1.2.3",
+    )]
     set: Vec<String>,
-    #[structopt(short, long, help = "Output the umbrella chart to a given directory. Defaults to \"./chart\".")]
+
+    #[structopt(short, long,
+        help = "output the umbrella chart to the given directory;\nchecks VONGFORM_OUTPUT_DIR and falls back to `./chart'",
+    )]
     output: Option<PathBuf>,
 
-    #[structopt(short, long, help = "The fully-qualified URL to the helm chart repository you wish to pull services from.")]
+    #[structopt(short, long,
+        help = "the fully-qualified url of the helm chart repository to use; defaults to VONGFORM_DEFAULT_REPOSITORY",
+    )]
     repository: Option<String>
 }
 

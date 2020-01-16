@@ -130,7 +130,7 @@ async fn main() -> anyhow::Result<()> {
             Key: "/umbrella".to_string(),
             LockIndex: 0,
             ModifyIndex: 0,
-            Value: "W10K".to_string() // "[]", base64'd
+            Value: "e2RlcGVuZGVuY2llczogW119Cg==".to_string() // "{dependencies: []}", base64'd
         }]
     };
 

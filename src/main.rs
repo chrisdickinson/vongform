@@ -180,11 +180,12 @@ async fn main() -> anyhow::Result<()> {
     DirBuilder::new().recursive(true).create(&pb)?;
 
     pb.push("Chart.yaml");
-    afs::write(&pb, format!(r#"apiVersion: 'v1',
-description: 'Umbrella chart, generated on {}',
-appVersion: '1.0',
-name: chart,
-version: '1.0.0-{}'"#, now.to_rfc2822(), now.timestamp())).await?;
+    afs::write(&pb, format!(r#"apiVersion: 'v1'
+description: 'Umbrella chart, generated on {}'
+appVersion: '1.0'
+name: chart
+version: '1.0.0-{}'
+"#, now.to_rfc2822(), now.timestamp())).await?;
     pb.pop();
 
     pb.push("values.yaml");
